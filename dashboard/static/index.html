@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumizome</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5db2ff"/><stop offset="1" stop-color="#c98bff"/></linearGradient></defs>
+        <path d="M16 3 C10 11 6 15 6 21 a10 10 0 0 0 20 0 C26 15 22 11 16 3 Z" fill="url(#g)"/>
+        <circle cx="12.5" cy="19" r="2.4" fill="#0a0c12" opacity="0.35"/>
+      </svg>
+      <div><h1>Sumizome</h1><span class="sub">personal typo recovery</span></div>
+    </div>
+    <div class="spacer"></div>
+    <span id="modelPill" class="pill click" title="jump to model settings"><span class="dot"></span><span>model</span></span>
+    <span id="enginePill" class="pill click" title="toggle the engine on and off"><span class="dot"></span><span>engine</span></span>
+  </header>
+
+  <div class="layout">
+    <nav id="nav">
+      <a data-s="overview" class="active">{i-grid} Overview</a>
+      <a data-s="playground">{i-play} Playground</a>
+      <div class="navlabel">Your data</div>
+      <a data-s="typos">{i-table} Typo memory</a>
+      <a data-s="whitelist">{i-shield} Whitelist</a>
+      <a data-s="insights">{i-chart} Typing insights</a>
+      <a data-s="rawlog">{i-log} Raw log</a>
+      <div class="navlabel">System</div>
+      <a data-s="learning">{i-loop} Learning loop</a>
+      <a data-s="model">{i-cpu} Model and benchmark</a>
+      <a data-s="settings">{i-gear} Settings</a>
+      <a data-s="health">{i-pulse} Health</a>
+    </nav>
+
+    <main>
+      <section id="overview" class="active">
+        <h2>Overview</h2>
+        <p class="subtle">The layered recovery engine at a glance. The goal is the gauge on the right climbing toward 100 as Layer 1 learns and the LLM fires less.</p>
+        <div class="cards" id="ovCards"></div>
+        <div class="row">
+          <div class="panel"><h3>Where corrections are handled</h3><div id="ovLayerBar"></div>
+            <div class="bar-legend">
+              <span style="color:var(--mem)">Layer 1 memory</span>
+              <span style="color:var(--matcher)">Layer 2 matcher</span>
+              <span style="color:var(--llm)">Layer 3 LLM</span>
+            </div></div>
+          <div class="panel"><h3>Handled without the LLM</h3>
+            <div class="gauge-wrap"><div class="gauge" id="ovGauge"><div class="g-txt"><b id="ovGaugeVal">0%</b><span>deterministic</span></div></div>
+              <div class="muted" id="ovGaugeNote"></div></div></div>
+        </div>
+      </section>
+
+      <section id="playground">
+        <h2>Playground</h2>
+        <p class="subtle">Type a mangled sentence and watch the real pipeline route each word: green is Layer 1 memory, blue is Layer 2 matcher, purple is Layer 3 LLM, amber is deferred. Nothing here touches your keyboard.</p>
+        <div class="panel">
+          <textarea id="pgInput" rows="3" placeholder="try:  i was tgjionk about the recieve case becuase teh server is slow">i was tgjionk about the recieve case becuase teh server was slow</textarea>
+          <div class="controls" style="margin-top:12px">
+            <button class="primary" id="pgRun">Run through pipeline</button>
+            <label class="muted"><input type="checkbox" id="pgLlm" checked style="width:auto;vertical-align:middle"> use Layer 3 LLM for deferred words</label>
+            <span class="muted" id="pgMsg"></span>
+          </div>
+          <div class="pg-out" id="pgOut"></div>
+          <div class="pg-final" id="pgFinal" style="display:none"></div>
+        </div>
+      </section>
+
+      <section id="typos">
+        <h2>Personal typo memory <span class="chip mem" style="vertical-align:middle">Layer 1</span></h2>
+        <p class="subtle">Every confirmed correction lands here. A known mangle is fixed instantly with no model. Add your own, or delete a mapping to stop it firing.</p>
+        <div class="controls">
+          <input id="typoSearch" placeholder="search..." style="min-width:200px">
+          <input id="newMangled" placeholder="mangled" style="width:130px">
+          <input id="newIntended" placeholder="intended" style="width:130px">
+          <button class="primary" id="addTypo">Add</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="ghost" id="exportBtn">Export</button>
+          <button class="ghost" id="importBtn">Import</button>
+          <span class="muted" id="typoCount"></span>
+        </div>
+        <div class="tablewrap"><table class="data" id="typoTable"></table></div>
+      </section>
+
+      <section id="whitelist">
+        <h2>Never-touch whitelist</h2>
+        <p class="subtle">Names, slang, and technical terms that must never be corrected. Grown automatically from words you type often and never fix, or by undoing a correction once.</p>
+        <div class="controls">
+          <input id="newWord" placeholder="add a word">
+          <button class="primary" id="addWord">Add</button>
+          <span class="muted" id="wlCount"></span>
+        </div>
+        <div class="panel wl" id="wlList"></div>
+      </section>
+
+      <section id="insights">
+        <h2>What I learned about how you type</h2>
+        <p class="subtle">Derived from your accumulated corrections. All of it is yours and local.</p>
+        <div class="panel">
+          <h3>Keyboard heat: the keys you fumble most</h3>
+          <div id="heatmap" class="kbd"></div>
+          <div class="heat-scale"><span>less</span><div class="bar"></div><span>more</span></div>
+        </div>
+        <div class="row">
+          <div class="panel"><h3>Most frequent mangles</h3><div id="topMangles"></div></div>
+          <div class="panel"><h3>Confidence distribution</h3><div id="confChart"></div>
+            <div class="muted" style="margin-top:6px">bars at 0.5 and above auto-apply without the LLM</div></div>
+        </div>
+        <div class="row">
+          <div class="panel"><h3>Typo length profile</h3><div id="lenChart"></div></div>
+          <div class="panel"><h3>When you mistype (hour of day)</h3><div id="hourChart"></div></div>
+        </div>
+        <div class="panel"><h3>Corrections over time, by layer</h3><div id="timeChart"></div>
+          <div class="bar-legend"><span style="color:var(--mem)">memory</span><span style="color:var(--matcher)">matcher</span><span style="color:var(--llm)">llm</span></div></div>
+      </section>
+
+      <section id="rawlog">
+        <h2>Raw log</h2>
+        <p class="subtle">Everything you typed and every correction, accepted or rejected. Local only, for your eyes.</p>
+        <div class="row">
+          <div class="panel"><h3>Corrections</h3><div class="tablewrap" style="max-height:540px"><table class="data" id="corrTable"></table></div></div>
+          <div class="panel"><h3>Sentences logged</h3><div class="tablewrap" style="max-height:540px"><table class="data" id="rawTable"></table></div></div>
+        </div>
+      </section>
+
+      <section id="learning">
+        <h2>Learning loop</h2>
+        <p class="subtle">The end-of-day pass promotes recurring mangles into Layer 1 and grows the whitelist. As it works, the share handled without the LLM should climb.</p>
+        <div class="cards" id="learnCards"></div>
+        <div class="panel"><h3>Share handled without the LLM, over time</h3><div id="noLlmChart"></div></div>
+        <div class="controls"><button class="primary" id="compactBtn">Run compaction now</button><span class="muted" id="compactMsg"></span></div>
+      </section>
+
+      <section id="model">
+        <h2>Model and benchmark</h2>
+        <p class="subtle">Layer 3 is hot-swappable. Benchmark any installed model on the mangled-typo recovery set before you commit to it.</p>
+        <div class="controls">
+          <label class="muted">Layer 3 model</label>
+          <select id="modelSelect"></select>
+          <button class="primary" id="benchBtn">Run recovery benchmark</button>
+          <span class="muted" id="benchMsg"></span>
+        </div>
+        <div class="panel"><h3>Fill-in-the-blank prompt</h3><div id="promptBox" class="mono muted" style="white-space:pre-wrap;font-size:12.5px"></div></div>
+        <div class="panel"><h3>Last benchmark</h3><div id="benchResults"></div></div>
+      </section>
+
+      <section id="settings">
+        <h2>Settings</h2>
+        <p class="subtle">Tuning knobs for the recovery layers and Layer 3. Changes take effect live and are saved to config.json.</p>
+        <div class="panel"><div class="form-grid" id="settingsForm"></div>
+          <div class="controls" style="margin-top:18px"><button class="primary" id="saveSettings">Save settings</button><span class="muted" id="settingsMsg"></span></div>
+        </div>
+      </section>
+
+      <section id="health">
+        <h2>Health</h2>
+        <div class="cards" id="healthCards"></div>
+      </section>
+    </main>
+  </div>
+  <input type="file" id="importFile" accept="application/json" style="display:none">
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

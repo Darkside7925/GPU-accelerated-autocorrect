@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "active_model": "gemma4:e2b",
+  "ollama_url": "http://127.0.0.1:11434",
+  "toggle_hotkey": "<ctrl>+<alt>+a",
+  "stage2_enabled": true,
+  "stage2_idle_ms": 350,
+  "stage2_max_drift_chars": 60,
+  "undo_window_s": 4.0,
+  "min_word_len": 3,
+  "layer1_apply_confidence": 0.50,
+  "layer2_apply_confidence": 0.75,
+  "dashboard_enabled": true,
+  "dashboard_hostname": "grammer.local",
+  "dashboard_port": 80,
+  "model_options": {
+    "_default": { "num_predict": 16, "temperature": 0, "timeout_s": 12.0 },
+    "gemma4:e2b": { "num_predict": 16, "temperature": 0, "timeout_s": 12.0 },
+    "qwen3:0.6b": { "num_predict": 16, "temperature": 0, "timeout_s": 8.0 }
+  }
+}
