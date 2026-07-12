@@ -33,6 +33,9 @@ DEFAULTS = {
     "layer1_apply_confidence": 0.50,       # min personal-memory confidence to auto-apply
     "layer2_apply_confidence": 0.72,       # min matcher confidence to auto-apply, else defer to L3.
                                            # tuned to catch clear near-misses without misfiring
+    "layer2_short_confidence": 0.85,       # higher bar for short words (<=4 chars): keyboard
+                                           # matching is unreliable there, context should decide
+    "hint_min_confidence": 0.55,           # only hint the LLM with Layer 2 candidates this good
     # dashboard
     "dashboard_enabled": True,
     "dashboard_hostname": "grammer.local", # add "127.0.0.1 grammer.local" to the hosts file

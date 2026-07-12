@@ -81,11 +81,23 @@ class RecoveryPipeline:
 
         # Layer 2: keyboard + phonetic matcher (deterministic)
         cand, conf = self.matcher.match(core, min_confidence=0.0)
-        if cand and conf >= self._l2_gate() and cand.lower() != core.lower():
+        gate = self._l2_gate()
+        # Short words are where keyboard matching is least reliable and context
+        # matters most (agt -> "at", not "act"): demand more before auto-applying,
+        # otherwise leave it for the context layer. A wrong fix is worse than a
+        # missed one.
+        if len(core) <= 4:
+            gate = max(gate, self.cfg.get("layer2_short_confidence", 0.85))
+        if cand and conf >= gate and cand.lower() != core.lower():
             return WordResult("apply", intended=cand, layer="matcher",
                               confidence=conf, original=word)
 
-        # not valid, not resolved -> Layer 3 (context). Pass Layer 2's plausible
-        # candidates as hints so the model picks the one that fits the sentence.
-        cands = tuple(self.matcher.top_candidates(core, n=5))
+        # not valid, not resolved -> Layer 3 (context). Only hand Layer 2's
+        # candidates to the model as hints when they are TRUSTWORTHY: a longer
+        # word Layer 2 scored decently. On short or low-confidence words the
+        # candidates are usually the wrong words (thesejs -> theseus) and would
+        # only mislead the model, so let it use pure sentence context instead.
+        cands = ()
+        if len(core) >= 5 and conf >= self.cfg.get("hint_min_confidence", 0.55):
+            cands = tuple(self.matcher.top_candidates(core, n=5))
         return WordResult("defer", original=word, candidates=cands)
