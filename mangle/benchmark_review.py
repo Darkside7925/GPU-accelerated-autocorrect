@@ -45,6 +45,10 @@ CASES = [
     # doubled word (the one allowed deletion)
     ("the the water is cold today", "the water is cold today"),
     ("i want to to go home now", "i want to go home now"),
+    # formatting must survive a fix (stars stay wrapped around the fixed word;
+    # the apostrophe fix matches L1's seeded didnt->didn't policy)
+    ("*whats hapening!* i just got here", "*what's happening!* i just got here"),
+    ("*whats happening!* i just got here", "*what's happening!* i just got here"),
     # ---------------- passthrough traps: must come back with NO changes ----------------
     ("that rizz is actually crazy bro", None),
     ("tell Jhon i said hi when you see him", None),
@@ -62,7 +66,8 @@ CASES = [
     ("idk what happened tbh it was weird", None),
     ("ngl that was smooth fr", None),
     ("i love waguri sm bro", None),                # lowercase name stays
-    ("gojo would win ngl", None)
+    ("gojo would win ngl", None),
+    ("this is _actually_ so good rn", None)        # emphasis stays
 ]
 
 

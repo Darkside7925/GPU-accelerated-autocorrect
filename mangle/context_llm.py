@@ -55,6 +55,9 @@ FILL_IN_BLANK_PROMPT = (
     "'straight'\n"
     "- never a synonym, never a nicer word, never a different form of the same "
     "word. The person's wording is not yours to improve\n"
+    "- symbols attached to the word are intentional formatting (*word* for "
+    "emphasis, quotes, exclamation marks): keep them exactly where they were, "
+    "wrapped around the fixed word. [[*hapening!*]] -> *happening!*\n"
     "- if two ordinary words were typed with the missing space between them "
     "(itsthe, alot), reply with the two words and the space: its the, a lot. "
     "Never split a real single word (dueling, running), a name, or a brand "
@@ -102,6 +105,15 @@ REVIEW_PROMPT = (
     "word used the way people casually use it is NOT wrong\n"
     "- word order, phrasing, punctuation, capitalization, or anything about "
     "how the sentence is written. You fix wrong words; you never edit\n"
+    "\n"
+    "The sentence often carries formatting the person typed on purpose: "
+    "*stars* for emphasis, _underscores_, ~tildes~, `backticks`, quotes, "
+    "dots, dashes, emoji. All of it is part of their message. Reproduce "
+    "every symbol exactly where it was, character for character. When you "
+    "fix a word inside formatting, the formatting stays wrapped around it: "
+    "'*whats hapening!*' becomes '*whats happening!*' with both stars and "
+    "the exclamation mark right where they were, and '*whats happening!*' "
+    "with nothing wrong in it comes back exactly as typed, stars and all.\n"
     "\n"
     "Replace a word only with the word that was clearly meant, and keep your "
     "reply the exact same number of words as the sentence (one fewer only "
@@ -200,7 +212,10 @@ def clean_sentence(raw: str) -> str:
     return out.strip('"`').strip()
 
 
-_TOKEN_PUNCT = ".,!?;:\"()[]{}"
+# shell characters around a word: punctuation plus formatting/emphasis symbols
+# (*stars*, _underscores_, ~tildes~, `backticks`). The shell must be identical
+# on both sides of a change, so a fix inside emphasis keeps the emphasis.
+_TOKEN_PUNCT = ".,!?;:\"()[]{}*_~`"
 
 
 def _token_core(tok: str) -> str:
