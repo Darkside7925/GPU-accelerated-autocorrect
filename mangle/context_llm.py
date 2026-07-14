@@ -26,17 +26,28 @@ from app.config import options_for
 # Canonical prompt and options: the Phase 0 benchmark imports these so it tests
 # exactly what the app runs in production.
 FILL_IN_BLANK_PROMPT = (
-    "You fix a single typo. The user gives one sentence with exactly one word "
-    "wrapped in double square brackets, like [[wrod]]. Reply with ONLY the word "
-    "the bracketed word was meant to be.\n"
+    "You correct ONE mistyped word using the meaning of the whole sentence. The "
+    "user gives one sentence with exactly one word wrapped in double square "
+    "brackets, like [[wrod]]. Read the ENTIRE sentence first and work out what "
+    "the person is actually saying, then reply with ONLY the word the bracketed "
+    "word was meant to be.\n"
     "Rules:\n"
-    "- Fix only an obvious misspelling of an ordinary English word.\n"
-    "- If the bracketed word could be a name, username, brand, slang, "
-    "abbreviation, code, or technical term, reply with it EXACTLY unchanged.\n"
-    "- Never swap a word for a synonym or a different word that only means or "
-    "sounds similar. Do not translate slang. Do not shorten or expand the word.\n"
-    "- If you are not sure it is a plain misspelling, reply with the bracketed "
-    "word unchanged.\n"
+    "- Context decides the answer. Choose the word that fits the sentence's "
+    "meaning and grammar, not merely one that looks or sounds similar. If two "
+    "corrections are equally plausible in spelling, pick the one the surrounding "
+    "words call for.\n"
+    "- NEVER change a name. If the bracketed word is, or could be, a person's "
+    "name, username, handle, place, company, brand, or product, reply with it "
+    "EXACTLY as typed. Treat a word that is capitalized, prefixed with '@', or "
+    "introduced like a name (after 'Mr', 'Mrs', 'Ms', 'Dr', 'named', 'aka', or "
+    "'name is') as a name and keep it unchanged, even if it looks misspelled.\n"
+    "- Keep slang, abbreviations, code, file names, and technical terms EXACTLY "
+    "unchanged.\n"
+    "- Fix only an obvious misspelling of an ordinary English word. Never swap a "
+    "word for a synonym or a different word that only means or sounds similar. "
+    "Do not translate slang. Do not shorten or expand the word.\n"
+    "- If you are not certain it is a plain misspelling of a common word, reply "
+    "with the bracketed word unchanged. When in doubt, do nothing.\n"
     "Reply with just one word: no brackets, no quotes, no punctuation, no "
     "explanation."
 )
@@ -67,6 +78,37 @@ def mark_word(sentence: str, token: str) -> str:
 def replace_word(sentence: str, token: str, word: str) -> str:
     """Replace the first whole-word occurrence of token with word."""
     return _word_re(token).sub(word.replace("\\", r"\\"), sentence, count=1)
+
+
+# words that, appearing right before a token, frame it as a name we must not
+# touch (people type their own and friends' names, which are in no dictionary).
+# High precision only: cues that overwhelmingly precede a name, not a normal word.
+_NAME_CUES = frozenset({
+    "mr", "mrs", "ms", "mx", "dr", "prof", "professor", "sir", "madam", "mister",
+    "named", "aka", "nicknamed", "surname",
+})
+
+
+def looks_like_name(sentence: str, token: str) -> bool:
+    """True if the sentence frames the bracketed token as a name, so it must be
+    kept exactly. Uses the LAST occurrence (the one mark_word flags) and looks at
+    what immediately precedes it: an '@' handle prefix, a title (Mr/Dr/...), or a
+    'name is X' / 'named X' introduction."""
+    matches = list(_word_re(token).finditer(sentence))
+    if not matches:
+        return False
+    start = matches[-1].start()
+    if start > 0 and sentence[start - 1] == "@":
+        return True
+    before = re.findall(r"[A-Za-z']+", sentence[:start].lower())
+    if not before:
+        return False
+    if before[-1] in _NAME_CUES:
+        return True
+    # "my name is X", "the name's X", "this is X" (self-introduction)
+    if before[-1] == "is" and len(before) >= 2 and before[-2] in ("name", "this"):
+        return True
+    return False
 
 
 def overcorrection_guard(token: str, candidate: str) -> bool:
@@ -188,6 +230,8 @@ class ContextLLMWorker:
             core = token.strip("'\"-")
             if not core or self._personal.contains(core.lower()):
                 continue  # whitelisted in the meantime, leave it alone
+            if looks_like_name(sentence, token):
+                continue  # framed as a name (Mr X, @handle, "name is X"): keep it
             word = self._ask(sentence, token, hints.get(token))
             if not word or re.search(r"\s", word):
                 continue  # empty or multi-word: reject (single-word discipline)
