@@ -102,6 +102,9 @@ class AutocorrectEngine:
 
         # undo-to-learn state (set when a correction is rendered)
         self._last_corr = None
+        # words/phrases the user rejected in THIS segment: never re-correct them
+        # here, so backspacing a fix does not immediately trigger it again
+        self._suppressed = set()
 
         # tokens deferred to Layer 3 within the current segment, plus valid
         # homophones flagged for the guarded context check (last 2, deduped)
@@ -338,6 +341,7 @@ class AutocorrectEngine:
         self._deferred = []
         self._cand_hints = {}
         self._context_checks = []
+        self._suppressed = set()
         self._last_corr = None
 
     # ------------------------------------------------------------ key logic
@@ -423,6 +427,9 @@ class AutocorrectEngine:
             # the second fragment may itself be mistyped: inc + erease =
             # incerease -> increase. Accept a fuzzy fix only when it still starts
             # with the prefix you typed correctly, which keeps it anchored and safe.
+            # A 1-2 char fragment (vs, to, of) is too short to fuzzy-merge safely.
+            if len(core) < 3:
+                return False
             cand, conf = self.pipeline.matcher.match(merged, 0.0)
             if (cand and cand.lower() != merged.lower()
                     and cand.lower().startswith(prev.lower())
@@ -447,6 +454,8 @@ class AutocorrectEngine:
         Layer 2 hit rewrites the MODEL only (_tail); the physical screen keeps
         the typo until _sync renders it on the next pause. An unresolved word is
         deferred to Layer 3. Valid words are left alone (passthrough)."""
+        if word.lower() in self._suppressed:
+            return   # you rejected correcting this here; leave it alone this segment
         if self._try_join(word, trigger):
             return
         res = self.pipeline.on_word(word)
@@ -571,6 +580,12 @@ class AutocorrectEngine:
         self._synced = base + lc["corrected"]               # user deleted the trigger
         self._tail = base + lc["original"] + lc["trigger"]  # _sync restores original
         self.personal.mark_undone(lc["log_id"])
+        # Never redo THIS correction in THIS segment: once you backspace it, the
+        # word (and, for a join, each of its parts) is left alone until the
+        # segment resets, so fixing it by hand does not trigger it again.
+        self._suppressed.add(lc["original"].lower())
+        for part in lc["original"].split():
+            self._suppressed.add(part.lower())
         # Reject-to-LEARN, by pattern, not on a single backspace. Restoring the
         # word once is just an undo. Only when the same correction gets rejected
         # repeatedly does the engine conclude it is genuinely unwanted and stop

@@ -33,6 +33,14 @@ class WordResult:
     candidates: tuple = () # Layer 2's plausible words, hints for Layer 3 (defer)
 
 
+# common short abbreviations the frequency dictionary lacks; treated as real so
+# they are never "corrected" or merged (pro vs hacker must keep "vs")
+ABBREVIATIONS = frozenset({
+    "vs", "etc", "ie", "eg", "aka", "asap", "fyi", "diy", "faq", "aka", "dept",
+    "misc", "approx", "min", "max", "avg", "std", "img", "src", "dir", "env",
+})
+
+
 class RecoveryPipeline:
     def __init__(self, cfg, memory, matcher, personal):
         self.cfg = cfg
@@ -50,7 +58,8 @@ class RecoveryPipeline:
         """A real word or an intentional personal term: leave it alone."""
         if not core:
             return True
-        if self.personal.contains(core.lower()):
+        low = core.lower()
+        if low in ABBREVIATIONS or self.personal.contains(low):
             return True
         return self.matcher.is_dictionary_word(core)
 

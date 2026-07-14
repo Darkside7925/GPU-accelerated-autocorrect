@@ -26,7 +26,7 @@ pythonw -m app.main         # background, no console window
 ```
 
 - **Ctrl+Alt+A** toggles correction on and off. The tray menu does the same, plus model hot-swap, run-benchmark, open-dashboard, and run-compaction.
-- **Backspace right after a correction** to undo it and get your word back. It is not disabled on a single backspace, that would be too trigger-happy. Only when the same correction gets rejected repeatedly (`reject_threshold`, default 3 times) does the engine conclude the fix is genuinely unwanted and stop making it. It learns from the pattern, not one keystroke.
+- **Backspace right after a correction** to undo it and get your word back. It is not disabled on a single backspace, that would be too trigger-happy. Only when the same correction gets rejected repeatedly (`reject_threshold`, default 3 times) does the engine conclude the fix is genuinely unwanted and stop making it. It learns from the pattern, not one keystroke. And once you backspace a fix, that exact correction will not re-fire for the rest of the current sentence, so deleting back to keep what you typed does not immediately trigger the same change again.
 - **Updates** are checked against GitHub on startup. If a newer version is published, the tray shows "Update available" and the dashboard shows a banner. The check compares this build's version to `app/version.py` on the repo's main branch; it never auto-installs.
 
 Then open the dashboard. One-time setup (Administrator, once) maps a friendly name to the loopback address:
