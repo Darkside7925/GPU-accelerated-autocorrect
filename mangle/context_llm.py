@@ -26,40 +26,44 @@ from app.config import options_for
 # Canonical prompt and options: the Phase 0 benchmark imports these so it tests
 # exactly what the app runs in production.
 FILL_IN_BLANK_PROMPT = (
-    "You correct ONE mistyped word using the meaning of the whole sentence. The "
-    "user gives one sentence with exactly one word wrapped in double square "
-    "brackets, like [[wrod]]. Read the ENTIRE sentence first and work out what "
-    "the person is actually saying, then reply with ONLY the word the bracketed "
-    "word was meant to be.\n"
-    "Rules:\n"
-    "- Context decides the answer. Choose the word that fits the sentence's "
-    "meaning and grammar, not merely one that looks or sounds similar. If two "
-    "corrections are equally plausible in spelling, pick the one the surrounding "
-    "words call for.\n"
-    "- NEVER change a name. If the bracketed word is, or could be, a person's "
-    "name, username, handle, place, company, brand, or product, reply with it "
-    "EXACTLY as typed. Treat a word that is capitalized, prefixed with '@', or "
-    "introduced like a name (after 'Mr', 'Mrs', 'Ms', 'Dr', 'named', 'aka', or "
-    "'name is') as a name and keep it unchanged, even if it looks misspelled. "
-    "Names are often typed in lowercase: if the bracketed word is not a common "
-    "English word and is not an OBVIOUS mistyping of one, it is a name or a "
-    "term you do not know (like waguri, gojo). Reply with it unchanged rather "
-    "than guessing a word that merely looks similar.\n"
-    "- Keep slang, abbreviations, code, file names, and technical terms EXACTLY "
-    "unchanged.\n"
-    "- Fix only an obvious misspelling of an ordinary English word. Never swap a "
-    "word for a synonym or a different word that only means or sounds similar. "
-    "Do not translate slang. Do not shorten or expand the word.\n"
-    "- MISSING SPACE: if the bracketed word is clearly two ordinary words typed "
-    "with no space between them (like 'itsthe' for 'its the', or 'alot' for 'a "
-    "lot'), reply with the two words separated by ONE space. Do this only when "
-    "both are real words and the letters are otherwise correct. NEVER split a "
-    "real single word (dueling, running, awesome), a name, a brand (starlink), "
-    "or a compound word. If in doubt, do not split.\n"
-    "- If you are not certain it is a plain misspelling of a common word, reply "
-    "with the bracketed word unchanged. When in doubt, do nothing.\n"
-    "Reply with the intended word, or the two words if it was a missing space: "
-    "no brackets, no quotes, no punctuation, no explanation."
+    "You repair typos in someone's live typing. The user sends one sentence "
+    "with exactly one word wrapped in double square brackets, like [[wrod]]. "
+    "Reply with only the word that was meant.\n"
+    "\n"
+    "STEP 1 - decide if the word is even broken. Reply with it UNCHANGED if it "
+    "is any of these:\n"
+    "- a real English word, including slang and informal words (bruh, hella, "
+    "rizz, sus, lowkey, gonna, wanna)\n"
+    "- an internet abbreviation or texting shorthand: btw, idk, tbh, ngl, imo, "
+    "rn, smh, irl, lol, omg, brb, nvm, jk, thx, pls, bc, cuz, tho, gg, dm, fr, "
+    "and ANYTHING like them\n"
+    "- a name, nickname, username, @handle, place, company, brand, or product. "
+    "Names are usually typed in lowercase here (waguri, gojo, discord). A "
+    "capitalized word, or one after a title (Mr, Dr, ...) or 'named'/'aka'/"
+    "'name is', is always a name\n"
+    "- code, a filename, a technical term, or anything with digits or symbols\n"
+    "- any word you do not recognize that is not an OBVIOUS mistyping of a "
+    "common word: that is a name or a term you do not know, not a typo\n"
+    "\n"
+    "STEP 2 - only if it is clearly a broken ordinary word, reply with the one "
+    "word that was meant:\n"
+    "- the fix must explain the typed letters as finger slips: swapped, "
+    "doubled, missing, or neighbouring keys. teh -> the, becuase -> because, "
+    "thinkign -> thinking, wrod -> word\n"
+    "- use the meaning of the WHOLE sentence to choose between candidates: in "
+    "'i cant thinkg straight' the word is thinking, not thing, because of "
+    "'straight'\n"
+    "- never a synonym, never a nicer word, never a different form of the same "
+    "word. The person's wording is not yours to improve\n"
+    "- if two ordinary words were typed with the missing space between them "
+    "(itsthe, alot), reply with the two words and the space: its the, a lot. "
+    "Never split a real single word (dueling, running), a name, or a brand "
+    "(starlink)\n"
+    "\n"
+    "When you are less than certain, reply with the word unchanged. A wrong "
+    "'fix' destroys someone's sentence; a missed one costs nothing.\n"
+    "Reply with exactly the word (or the two words for a missing space): no "
+    "brackets, no quotes, no punctuation, no explanation."
 )
 FILL_OPTIONS = {"num_predict": 16, "temperature": 0}
 
@@ -69,31 +73,40 @@ FILL_OPTIONS = {"num_predict": 16, "temperature": 0}
 # and every change must survive align_review() below, so the model can only
 # swap single words (or drop an exact doubled word), never rewrite.
 REVIEW_PROMPT = (
-    "You are proofreading one sentence that someone is typing right now. The "
-    "user message is that sentence. Reply with the SAME sentence, fixing only "
+    "You proofread one sentence that someone is typing right now. The user "
+    "message is the sentence. Reply with the SAME sentence, correcting only "
     "words that are clearly wrong for what the sentence means.\n"
-    "Rules:\n"
-    "- Read the whole sentence first and use its meaning. You may fix a wrong "
-    "homophone (to/too, their/there, its/it's, then/than), an obvious typo, or "
-    "a small word that does not fit the grammar of the sentence.\n"
-    "- Replace a word ONLY with the word that was clearly meant. Never reword, "
-    "rephrase, reorder, shorten, or expand the sentence. Never swap a word for "
-    "a synonym and never improve style, tone, or grammar choices: slang and "
-    "casual wording stay exactly as written.\n"
-    "- Never 'correct' casual grammar or a verb form. 'he did good' stays "
-    "'did good' (not 'well'); 'we grinded' stays 'grinded' (not 'ground'); "
-    "'gonna', 'wanna', 'lowkey', and words like them stay untouched. If the "
-    "word is a real word used the way people casually use it, it is NOT wrong.\n"
-    "- Never change names, usernames, @handles, places, companies, brands, "
-    "products, code, or technical terms. Names are usually typed in lowercase "
-    "here: if a word is not a common English word and is not an OBVIOUS "
-    "mistyping of one, it is someone's name, a nickname, or a term you do not "
-    "know (like waguri, gojo, rizz). KEEP IT exactly as typed. Never replace a "
-    "word you do not recognize with a word that merely looks similar.\n"
-    "- If the exact same word is accidentally typed twice in a row (like 'the "
-    "the'), write it once. Otherwise your reply must have exactly the same "
-    "number of words as the sentence.\n"
-    "- If nothing is clearly wrong, reply with the sentence exactly as given.\n"
+    "\n"
+    "You may fix exactly three kinds of mistakes:\n"
+    "- a wrong homophone that the rest of the sentence exposes: 'way to hot' "
+    "-> 'way too hot', 'over their on the table' -> 'over there on the "
+    "table', 'should of gone' -> 'should have gone', 'better then me' -> "
+    "'better than me'\n"
+    "- an obviously mistyped ordinary word: 'i realy think' -> 'i really "
+    "think', 'the goverment said' -> 'the government said'\n"
+    "- the exact same word accidentally typed twice in a row: 'the the "
+    "water' -> 'the water'. Write it once. This is the ONLY case where your "
+    "reply may have fewer words than the sentence\n"
+    "\n"
+    "You must NEVER touch:\n"
+    "- names, nicknames, usernames, @handles, places, brands, products. "
+    "Names are usually typed in lowercase here (waguri, gojo, discord). Any "
+    "word you do not recognize that is not an OBVIOUS mistyping of a common "
+    "word is a name or a term you do not know: keep it exactly\n"
+    "- internet abbreviations and texting shorthand: btw, idk, tbh, ngl, "
+    "imo, rn, smh, irl, lol, omg, brb, nvm, jk, thx, pls, bc, cuz, tho, gg, "
+    "dm, fr, and ANYTHING like them\n"
+    "- slang, casual grammar, and the person's word choice: 'he did good' "
+    "stays 'did good' (not 'well'), 'we grinded' stays 'grinded' (not "
+    "'ground'), 'gonna', 'wanna', 'hella', 'lowkey' stay as typed. A real "
+    "word used the way people casually use it is NOT wrong\n"
+    "- word order, phrasing, punctuation, capitalization, or anything about "
+    "how the sentence is written. You fix wrong words; you never edit\n"
+    "\n"
+    "Replace a word only with the word that was clearly meant, and keep your "
+    "reply the exact same number of words as the sentence (one fewer only "
+    "for a doubled word). If nothing is clearly wrong, reply with the "
+    "sentence exactly as given: most sentences need no change at all.\n"
     "Reply with only the sentence: no quotes, no explanation, no extra text."
 )
 
@@ -194,6 +207,24 @@ def _token_core(tok: str) -> str:
     return tok.strip(_TOKEN_PUNCT)
 
 
+def _is_protected_term(core: str) -> bool:
+    """Abbreviations and chat shorthand are never correction targets, no matter
+    what the model replies (btw, idk, vs, ...)."""
+    from mangle.pipeline import ABBREVIATIONS
+    return core.lower() in ABBREVIATIONS
+
+
+# style/grammar normalizations a model keeps wanting to make even when told not
+# to: both words are fine, the swap is an EDIT of the person's voice, not a fix.
+# Checked deterministically so no prompt drift can ever let one through.
+STYLE_PAIRS = frozenset({
+    ("good", "well"), ("well", "good"), ("bad", "badly"), ("real", "really"),
+    ("grinded", "ground"), ("sneaked", "snuck"), ("snuck", "sneaked"),
+    ("dived", "dove"), ("dove", "dived"), ("hanged", "hung"),
+    ("got", "gotten"), ("gotten", "got"), ("funner", "funnier"),
+})
+
+
 def align_review(orig: str, revised: str, is_word=None, max_changes: int = 3):
     """Diff a review reply against the sentence it reviewed, keeping only safe
     single-word swaps. Returns (changes, dedupe_at) where changes is a list of
@@ -250,8 +281,10 @@ def align_review(orig: str, revised: str, is_word=None, max_changes: int = 3):
             continue
         if overcorrection_guard(old_core, new_core):
             continue
-        if looks_like_name(orig, old_core):
+        if looks_like_name(orig, old_core) or _is_protected_term(old_core):
             continue
+        if (old_core.lower(), new_core.lower()) in STYLE_PAIRS:
+            continue   # a style edit of the person's voice, not a fix
         if (is_word is not None and not is_word(new_core)
                 and "'" not in new_core and "-" not in new_core):
             continue
@@ -392,8 +425,8 @@ class ContextLLMWorker:
             core = token.strip("'\"-")
             if not core or self._personal.contains(core.lower()):
                 continue  # whitelisted in the meantime, leave it alone
-            if looks_like_name(sentence, token):
-                continue  # framed as a name (Mr X, @handle, "name is X"): keep it
+            if looks_like_name(sentence, token) or _is_protected_term(core):
+                continue  # a name or shorthand (btw, idk): keep it
             word = self._ask(sentence, token, hints.get(token))
             if not word:
                 continue

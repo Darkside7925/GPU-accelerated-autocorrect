@@ -58,6 +58,11 @@ CASES = [
     ("she lowkey carried the whole team", None),
     ("we grinded that project all night", None),  # verb-form trap: NOT "ground"
     ("no cap that was the best game ever", None),  # slang stays
+    ("btw i finished the report already", None),   # shorthand stays
+    ("idk what happened tbh it was weird", None),
+    ("ngl that was smooth fr", None),
+    ("i love waguri sm bro", None),                # lowercase name stays
+    ("gojo would win ngl", None)
 ]
 
 

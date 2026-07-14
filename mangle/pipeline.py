@@ -33,11 +33,23 @@ class WordResult:
     candidates: tuple = () # Layer 2's plausible words, hints for Layer 3 (defer)
 
 
-# common short abbreviations the frequency dictionary lacks; treated as real so
-# they are never "corrected" or merged (pro vs hacker must keep "vs")
+# abbreviations and chat shorthand the frequency dictionary lacks; treated as
+# real words so they are never "corrected", merged, or sent to the model at all
+# (pro vs hacker keeps "vs"; btw/idk/tbh are how people actually type)
 ABBREVIATIONS = frozenset({
-    "vs", "etc", "ie", "eg", "aka", "asap", "fyi", "diy", "faq", "aka", "dept",
+    # classic abbreviations
+    "vs", "etc", "ie", "eg", "aka", "asap", "fyi", "diy", "faq", "dept",
     "misc", "approx", "min", "max", "avg", "std", "img", "src", "dir", "env",
+    # internet / texting shorthand
+    "btw", "idk", "idc", "imo", "imho", "tbh", "ngl", "smh", "irl", "rn",
+    "lol", "lmao", "lmfao", "rofl", "omg", "omfg", "wtf", "tf", "ffs",
+    "brb", "gtg", "ttyl", "nvm", "jk", "thx", "ty", "tysm", "pls", "plz",
+    "np", "yw", "bc", "cuz", "tho", "altho", "prolly", "gg", "wp", "ez",
+    "dm", "pfp", "op", "irl", "afaik", "iirc", "fwiw", "imy", "ily",
+    "ikr", "istg", "ong", "atp", "icl", "ig", "imma", "finna", "boutta",
+    "hbu", "wbu", "wyd", "wya", "hmu", "goat", "mid", "sus", "fr", "frfr",
+    "ykw", "yk", "af", "asf", "stg", "bffr", "bruh", "bruv", "fam", "bestie",
+    "sm", "ofc", "obv", "obvi", "srsly", "deadass", "lowkey", "highkey",
 })
 
 
