@@ -59,6 +59,36 @@ FILL_IN_BLANK_PROMPT = (
 )
 FILL_OPTIONS = {"num_predict": 16, "temperature": 0}
 
+# The adaptive review pass: re-read the WHOLE sentence at a pause and fix words
+# in hindsight ("the water is to drinkable" -> too), including revising an
+# earlier fix. One call per review; the engine diffs the reply token-by-token
+# and every change must survive align_review() below, so the model can only
+# swap single words (or drop an exact doubled word), never rewrite.
+REVIEW_PROMPT = (
+    "You are proofreading one sentence that someone is typing right now. The "
+    "user message is that sentence. Reply with the SAME sentence, fixing only "
+    "words that are clearly wrong for what the sentence means.\n"
+    "Rules:\n"
+    "- Read the whole sentence first and use its meaning. You may fix a wrong "
+    "homophone (to/too, their/there, its/it's, then/than), an obvious typo, or "
+    "a small word that does not fit the grammar of the sentence.\n"
+    "- Replace a word ONLY with the word that was clearly meant. Never reword, "
+    "rephrase, reorder, shorten, or expand the sentence. Never swap a word for "
+    "a synonym and never improve style, tone, or grammar choices: slang and "
+    "casual wording stay exactly as written.\n"
+    "- Never 'correct' casual grammar or a verb form. 'he did good' stays "
+    "'did good' (not 'well'); 'we grinded' stays 'grinded' (not 'ground'); "
+    "'gonna', 'wanna', 'lowkey', and words like them stay untouched. If the "
+    "word is a real word used the way people casually use it, it is NOT wrong.\n"
+    "- Never change names, usernames, @handles, places, companies, brands, "
+    "products, code, or technical terms.\n"
+    "- If the exact same word is accidentally typed twice in a row (like 'the "
+    "the'), write it once. Otherwise your reply must have exactly the same "
+    "number of words as the sentence.\n"
+    "- If nothing is clearly wrong, reply with the sentence exactly as given.\n"
+    "Reply with only the sentence: no quotes, no explanation, no extra text."
+)
+
 
 def strip_thinking(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
@@ -141,6 +171,86 @@ def clean_output(raw: str) -> str:
     return out.strip('.,!?;:"\'`()[]').strip()
 
 
+def clean_sentence(raw: str) -> str:
+    """Like clean_output but for a whole sentence: only surrounding quotes and
+    thinking are removed, inner punctuation stays."""
+    out = strip_thinking(raw or "")
+    out = out.splitlines()[0].strip() if out.strip() else ""
+    return out.strip('"`').strip()
+
+
+_TOKEN_PUNCT = ".,!?;:\"()[]{}"
+
+
+def _token_core(tok: str) -> str:
+    return tok.strip(_TOKEN_PUNCT)
+
+
+def align_review(orig: str, revised: str, is_word=None, max_changes: int = 3):
+    """Diff a review reply against the sentence it reviewed, keeping only safe
+    single-word swaps. Returns (changes, dedupe_at) where changes is a list of
+    (token_index, old_core, new_core) and dedupe_at is the token index of an
+    accepted doubled-word deletion (-1 if none). Returns None if the reply must
+    be rejected outright (reworded, reordered, added words, too many changes).
+
+    Deterministic guards applied per change (stateless; the engine adds its
+    per-segment state on top: suppression, whitelist, flip-flop lock):
+      - punctuation shell must be identical (only the word inside may change)
+      - overcorrection_guard: no changes to capitalized/CamelCase tokens, no
+        large length change
+      - looks_like_name: a token framed as a name (Mr X, @handle, 'name is X')
+        is never changed
+      - the replacement must be a real word (or contraction/hyphenate)"""
+    a = orig.split()
+    b = revised.split()
+    if not a or not b:
+        return None
+    dedupe_at = -1
+    if len(b) == len(a) - 1:
+        # accept ONLY the doubled-word deletion: some token that exactly repeats
+        # its neighbour was written once. The reply may combine it with word
+        # swaps in any order, so try every exact-repeat position as the deleted
+        # one and keep the alignment with the fewest remaining diffs. A deleted
+        # word that was NOT a repeat never aligns within max_changes: reject.
+        best = None
+        for j in range(1, len(a)):
+            if _token_core(a[j]).lower() != _token_core(a[j - 1]).lower():
+                continue
+            trial = a[:j] + a[j + 1:]
+            diffs = sum(1 for x, y in zip(trial, b) if x.lower() != y.lower())
+            if diffs <= max_changes and (best is None or diffs < best[1]):
+                best = (j, diffs)
+        if best is None:
+            return None
+        dedupe_at = best[0]
+        a = a[:dedupe_at] + a[dedupe_at + 1:]   # compare the rest 1:1
+    elif len(b) != len(a):
+        return None                 # added or removed words: a rewrite, reject
+    changed = [i for i in range(len(a)) if a[i].lower() != b[i].lower()]
+    if len(changed) > max_changes:
+        return None                 # swapping this much means rewriting
+    changes = []
+    for i in changed:
+        old_tok, new_tok = a[i], b[i]
+        # report indexes against the ORIGINAL sentence (before the dedupe)
+        orig_i = i if (dedupe_at < 0 or i < dedupe_at) else i + 1
+        old_core, new_core = _token_core(old_tok), _token_core(new_tok)
+        if not old_core or not new_core or old_core.lower() == new_core.lower():
+            continue
+        # the punctuation shell must be untouched; only the word may change
+        if (old_tok.replace(old_core, "", 1) != new_tok.replace(new_core, "", 1)):
+            continue
+        if overcorrection_guard(old_core, new_core):
+            continue
+        if looks_like_name(orig, old_core):
+            continue
+        if (is_word is not None and not is_word(new_core)
+                and "'" not in new_core and "-" not in new_core):
+            continue
+        changes.append((orig_i, old_core, new_core))
+    return changes, dedupe_at
+
+
 class ContextLLMWorker:
     def __init__(self, cfg, personal, memory, on_result, is_word=None):
         """on_result(job_id, {token: recovered}), called from the worker thread.
@@ -159,23 +269,61 @@ class ContextLLMWorker:
     def submit(self, job_id: int, sentence: str, deferred: list[str],
                context: list[str] | None = None, hints: dict | None = None) -> None:
         try:
-            self._queue.put_nowait((job_id, sentence, deferred, context or [], hints or {}))
+            self._queue.put_nowait(("recover", job_id, sentence, deferred,
+                                    context or [], hints or {}))
         except queue.Full:
             pass  # typing faster than the GPU can recover; drop rather than lag
 
+    def submit_review(self, job_id: int, sentence: str) -> None:
+        """Adaptive review: re-read the whole sentence and return it corrected.
+        The result arrives through the same on_result callback with the revised
+        sentence under the "__review__" key."""
+        try:
+            self._queue.put_nowait(("review", job_id, sentence, [], [], {}))
+        except queue.Full:
+            pass
+
     def _run(self) -> None:
         while True:
-            job_id, sentence, deferred, context, hints = self._queue.get()
+            kind, job_id, sentence, deferred, context, hints = self._queue.get()
             recoveries: dict = {}
             try:
-                recoveries = self._recover(sentence, deferred, hints)
-                recoveries.update(self._check_homophones(sentence, context))
+                if kind == "review":
+                    recoveries = {"__review__": self._review(sentence)}
+                else:
+                    recoveries = self._recover(sentence, deferred, hints)
+                    recoveries.update(self._check_homophones(sentence, context))
             except requests.RequestException as e:
                 self.last_error = str(e)
             # ALWAYS answer, even with nothing to change or on error: the engine
             # keeps one job in flight and only frees the slot on a result, so a
             # silent drop here would block every future Layer 3 request
             self._on_result(job_id, recoveries)
+
+    def _review(self, sentence: str) -> str:
+        """One call over the whole sentence; returns the model's revised
+        sentence (the engine aligns and guards it, see align_review)."""
+        model = self._cfg["active_model"]
+        opts = options_for(self._cfg, model)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": REVIEW_PROMPT},
+                {"role": "user", "content": sentence},
+            ],
+            "stream": False, "think": False,
+            # enough room to echo the sentence back, scaled to its length
+            "options": {"temperature": 0,
+                        "num_predict": max(48, len(sentence.split()) * 3 + 16)},
+            "keep_alive": "2h",
+        }
+        url = f"{self._cfg['ollama_url']}/api/chat"
+        r = requests.post(url, json=payload, timeout=opts.get("timeout_s", 12.0))
+        if r.status_code == 400:  # older Ollama without the "think" field
+            payload.pop("think", None)
+            r = requests.post(url, json=payload, timeout=opts.get("timeout_s", 12.0))
+        r.raise_for_status()
+        return clean_sentence(r.json().get("message", {}).get("content", ""))
 
     def _check_homophones(self, sentence: str, context: list[str]) -> dict:
         """Guarded context check for valid homophones: the model may only swap

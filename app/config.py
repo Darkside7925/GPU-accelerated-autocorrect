@@ -26,6 +26,13 @@ DEFAULTS = {
                                            # so fast typing cannot interleave with a correction
     "context_homophones": True,            # guarded LLM check of valid homophones (to/too, their/
                                            # there); answers outside the confusion group are refused
+    "adaptive_review": True,               # re-read the whole sentence at a pause and fix words in
+                                           # hindsight ("the water is to drinkable" -> too), incl.
+                                           # revising an earlier fix. One model call per review.
+    "review_idle_ms": 1200,                # a review needs a real pause, longer than the normal fire
+    "review_min_words": 4,                 # don't review fragments; context needs a few words
+    "review_max_per_segment": 3,           # bound the model calls per sentence
+    "review_max_changes": 3,               # more changed words than this = the model is rewriting
     "stage2_max_drift_chars": 100,         # largest backspace reach when rendering a correction
     "undo_window_s": 4.0,                  # backspace within this window counts as a rejection
     "reject_threshold": 3,                 # stop correcting a word after this many rejections

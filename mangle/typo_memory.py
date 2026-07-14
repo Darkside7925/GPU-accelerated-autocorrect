@@ -28,6 +28,7 @@ SOURCE_BUMP = {
     "undo_confirm": 0.60,
     "compaction": 0.30,  # promoted by the end-of-day batch
     "llm": 0.20,         # produced by Layer 3, not yet reinforced
+    "review": 0.20,      # produced by the adaptive review pass, same policy
     "manual": 0.60,      # added by hand in the dashboard
 }
 DEFAULT_LOOKUP_CONFIDENCE = 0.50

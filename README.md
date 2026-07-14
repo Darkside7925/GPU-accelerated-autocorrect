@@ -84,6 +84,14 @@ Cheapest layer first, passthrough always preferred. Per keystroke, nothing happe
 
 **LLM-only mode** (`llm_only`, off by default, toggle in the dashboard Settings). When on, the deterministic Layers 1 and 2 stop auto-applying and every word that needs correcting is sent straight to the context LLM, which decides using the whole sentence. Valid words still pass through untouched and Layer 2 still supplies its keyboard-close candidates to the model as hints; it just never fixes a word on its own. Slower and heavier on the GPU, but every call is made by the model with context rather than a heuristic. Learned results are still cached into Layer 1, so a word you have corrected once this way is instant next time.
 
+### Adaptive review (the sentence gets re-decided as it grows)
+
+Every other layer decides word by word, at the moment the word is finished. The adaptive review (`adaptive_review`, on by default) is the pass that comes back later: at a real typing pause (1.2s) or a sentence terminator, the model re-reads the WHOLE sentence and may fix a word in hindsight, including a word every layer let through and even one of its own earlier fixes. Type "the water is way to hot" and pause: once "hot" exists, "to" is visibly wrong and becomes "too".
+
+It cannot rewrite you. The reply is diffed token-by-token against what you typed and rejected outright unless it is pure single-word swaps (plus one allowed deletion: an accidentally doubled word like "the the" written once). Each surviving change must still pass the name guard, the overcorrection guard, and a real-word check; words you rejected by backspacing are never touched again that sentence; a position can never flip back and forth (A -> B -> A is impossible); and at most 3 words may change per review, 3 reviews per sentence. Gate benchmark (`python -m mangle.benchmark_review`): 92% hindsight-fix, 100% passthrough on slang/names/tone traps ("he did good" stays "did good", "we grinded" stays "grinded").
+
+Efficiency: the review is ONE model call over the whole sentence and it replaces the per-word homophone checks while it is on, so a typical sentence costs the same or fewer model calls than before. Reviews only fire when the text actually changed since the last look, and never while a typo-recovery call is in flight.
+
 ### Transactional injection (fast typing cannot scramble a correction)
 
 The hook is observe-only, so your keystrokes reach the screen a beat before the correction worker sees them (pynput delivery lag). Applying a backspace-and-retype against that stale view is what used to scramble fast typing (`holland` -> `Hollaond`, a correction landing on the next word). A correction is now a short transaction:

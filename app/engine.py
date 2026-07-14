@@ -112,7 +112,13 @@ class AutocorrectEngine:
         self._cand_hints = {}   # token -> Layer 2 candidate hints for the model
         self._context_checks = []
         self._job_id = 0
-        self._jobs = {}         # job_id -> {"gen","deferred"}
+        self._jobs = {}         # job_id -> {"gen","deferred"} or {"gen","review"}
+
+        # adaptive review state: the sentence is re-read at pauses and words can
+        # be fixed in hindsight; these bound the churn per segment
+        self._reviewed_tail = ""   # segment text at the last review (fire only on change)
+        self._review_count = 0     # reviews already run this segment
+        self._review_pairs = []    # (old, new) lowercase pairs applied this segment
 
         # hook-thread scratch
         self._hook_injected = False
@@ -288,6 +294,7 @@ class AutocorrectEngine:
                     if time.monotonic() - self._last_key_ts >= settle:
                         self._sync()
                         self._maybe_fire_deferred()
+                        self._maybe_fire_review()
                     continue
                 self._dispatch(kind, payload, ts)
             except Exception:
@@ -343,6 +350,9 @@ class AutocorrectEngine:
         self._context_checks = []
         self._suppressed = set()
         self._last_corr = None
+        self._reviewed_tail = ""
+        self._review_count = 0
+        self._review_pairs = []
 
     # ------------------------------------------------------------ key logic
 
@@ -609,6 +619,7 @@ class AutocorrectEngine:
         if self._tail.strip():
             self.memory.log_raw(self._tail)     # raw text for the learning loop
         self._submit_deferred()
+        self._maybe_fire_review(force=True)     # sentence done: review it now
 
     def _maybe_fire_deferred(self):
         """Idle backstop: fire any words still waiting (the eager path in
@@ -621,17 +632,54 @@ class AutocorrectEngine:
         """Queue the current segment plus its unresolved words (and, at idle,
         flagged homophones) to Layer 3. Only one request in flight at a time;
         when it finishes we pump the backlog (see _handle_llm_result)."""
-        context = self._context_checks if include_context else []
+        # with the adaptive review on, homophones are NOT checked one call each:
+        # the review reads the whole sentence and covers them in a single call
+        adaptive = self.cfg.get("adaptive_review", True)
+        context = self._context_checks if (include_context and not adaptive) else []
         if (not (self._deferred or context) or self._jobs
                 or not self.cfg.get("stage2_enabled", True) or self.layer3 is None):
             return
         deferred, self._deferred = self._deferred, []
         hints = {t: self._cand_hints.pop(t) for t in deferred if t in self._cand_hints}
-        if include_context:
+        if context:
             self._context_checks = []
         self._job_id += 1
         self._jobs = {self._job_id: {"gen": self._gen, "deferred": list(deferred)}}
         self.layer3.submit(self._job_id, self._tail, list(deferred), list(context), hints)
+
+    def _maybe_fire_review(self, force=False):
+        """Adaptive review: at a real pause (or right at a sentence terminator),
+        re-read the WHOLE segment with the model and fix words in hindsight
+        ("the water is to drinkable" -> too), including revising an earlier fix
+        or a word every layer previously let through. One model call; the reply
+        is applied only through align_review plus the per-segment guards in
+        _apply_review, so it can swap single words but never rewrite."""
+        if not self.cfg.get("adaptive_review", True):
+            return
+        if not self.cfg.get("stage2_enabled", True) or self.layer3 is None:
+            return
+        if not hasattr(self.layer3, "submit_review"):
+            return
+        if self._jobs or self._deferred:
+            return              # typo recovery keeps priority; review can wait
+        sent = self._tail
+        if not sent.strip() or sent == self._reviewed_tail:
+            return              # nothing new since the last look
+        if self._review_count >= self.cfg.get("review_max_per_segment", 3):
+            return
+        words = [w for w in sent.split() if any(c.isalpha() for c in w)]
+        # queued homophones bypass the minimum: the review IS their check now
+        if len(words) < self.cfg.get("review_min_words", 4) and not self._context_checks:
+            return
+        if not force and (time.monotonic() - self._last_key_ts
+                          < self.cfg.get("review_idle_ms", 1200) / 1000):
+            return
+        self._review_count += 1
+        self._reviewed_tail = sent
+        self._context_checks = []
+        self._job_id += 1
+        self._jobs = {self._job_id: {"gen": self._gen, "review": sent}}
+        self.layer3.submit_review(self._job_id, sent)
 
     def _handle_llm_result(self, job_id, recoveries):
         """recoveries maps each typed token to its recovered word. Apply each
@@ -640,6 +688,10 @@ class AutocorrectEngine:
         job = self._jobs.pop(job_id, None)
         if job is None or job["gen"] != self._gen:
             self._submit_deferred()   # segment gone, but pump anything new
+            return
+        if "review" in job:
+            self._apply_review(job["review"], recoveries.get("__review__", ""))
+            self._submit_deferred()   # fire words that deferred while we waited
             return
         for token, recovered in recoveries.items():
             if not recovered or recovered.lower() == token.lower():
@@ -657,6 +709,72 @@ class AutocorrectEngine:
             self.personal.log_correction(token, recovered, "llm")
             log.info("llm: %r -> %r", token, recovered)
         self._submit_deferred()       # fire words that deferred while we waited
+
+    def _apply_review(self, orig, revised):
+        """Apply an adaptive-review reply into the model. The reply already
+        passed nothing; EVERY change must survive align_review (single-word
+        swaps with identical punctuation shells, the name and overcorrection
+        guards, real-word replacements, at most review_max_changes, plus the
+        one allowed doubled-word deletion) and then the per-segment state here:
+        user-rejected words stay, whitelisted words stay, and the flip-flop
+        lock means a position can never oscillate (A -> B -> A) and a word is
+        revised at most twice per segment."""
+        from mangle.context_llm import align_review
+        if not revised or revised == orig:
+            return
+        if self._tail != orig:
+            return   # typing resumed while the review ran; the next pause re-reviews
+        res = align_review(orig, revised, is_word=self.pipeline.matcher.is_word,
+                           max_changes=self.cfg.get("review_max_changes", 3))
+        if res is None:
+            log.info("review: reply rejected (rewrite): %r", revised[:80])
+            return
+        changes, dedupe_at = res
+        spans = list(re.finditer(r"\S+", orig))
+        edits, applied = [], []
+        for idx, old_core, new_core in changes:
+            if old_core.lower() in self._suppressed:
+                continue   # you rejected this word here; the review respects that
+            if self.personal.contains(old_core.lower()):
+                continue
+            if (new_core.lower(), old_core.lower()) in self._review_pairs:
+                continue   # would undo an earlier review change: no A -> B -> A
+            if sum(1 for _, n in self._review_pairs if n == old_core.lower()) >= 2:
+                continue   # this word was already revised twice; stop churning
+            tok = spans[idx].group(0)
+            new_tok = tok.replace(old_core, _match_case(old_core, new_core), 1)
+            edits.append((spans[idx].start(), spans[idx].end(), new_tok))
+            applied.append((idx, old_core, new_core, tok, new_tok))
+        if dedupe_at >= 0:
+            s = spans[dedupe_at]
+            end = spans[dedupe_at + 1].start() if dedupe_at + 1 < len(spans) else s.end()
+            edits.append((s.start(), end, ""))
+            word = s.group(0)
+            applied.append((dedupe_at, f"{word} {word}", word, f"{word} {word}", word))
+        if not edits:
+            return
+        new_text = orig
+        for start, end, rep in sorted(edits, reverse=True):
+            new_text = new_text[:start] + rep + new_text[end:]
+        self._tail = new_text
+        self._reviewed_tail = new_text   # don't re-review our own output
+        last_idx = len(spans) - 1
+        for idx, old_core, new_core, old_tok, new_tok in applied:
+            self._review_pairs.append((old_core.lower(), new_core.lower()))
+            log_id = self.personal.log_correction(old_core, new_core, "review")
+            # learn only stable mappings: a non-word typo the fast layers missed.
+            # A valid-word swap (to -> too) is per-sentence, never recorded.
+            if (not self.pipeline.matcher.is_word(old_core)
+                    and " " not in old_core
+                    and not self.personal.contains(old_core.lower())):
+                self.memory.record(old_core, new_core.lower(), source="review")
+            if idx == last_idx:
+                # an end-of-sentence change is undoable by backspace like any
+                # other rendered correction
+                self._last_corr = {"original": old_tok, "corrected": new_tok,
+                                   "layer": "review", "trigger": orig[spans[-1].end():],
+                                   "ts": time.monotonic(), "log_id": log_id}
+            log.info("review: %r -> %r", old_core, new_core)
 
 
 def _match_case(src: str, target: str) -> str:
