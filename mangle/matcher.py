@@ -201,6 +201,30 @@ class Layer2Matcher:
             return []
         return [w for w, _ in self._scored(mangle.strip().lower())[:n]]
 
+    def is_word(self, w: str) -> bool:
+        return w.lower() in self._freq
+
+    def try_split(self, word: str):
+        """A merged word (itsthe) split into two real words (its the). Only when
+        BOTH halves are common words at least 2 letters long; the split with the
+        highest combined frequency wins. Returns 'w1 w2' or None. Runs only on
+        words that are not themselves valid, so real words are never split."""
+        w = word.strip("'-")
+        if len(w) < 4 or not w.isalpha():
+            return None
+        wl = w.lower()
+        best, best_score = None, -1.0
+        for i in range(2, len(wl) - 1):
+            a, b = wl[:i], wl[i:]
+            fa, fb = self._freq.get(a), self._freq.get(b)
+            if fa and fb:
+                score = min(math.log1p(fa), math.log1p(fb))  # both must be common
+                if score > best_score:
+                    best_score, best = score, (a, b)
+        if best is None:
+            return None
+        return _match_case(word, best[0]) + " " + best[1]
+
 
 def _safe(fn, s: str) -> str:
     try:

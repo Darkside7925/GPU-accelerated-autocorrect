@@ -79,6 +79,13 @@ class RecoveryPipeline:
             return WordResult("apply", intended=hit, layer="memory",
                               confidence=self.memory.confidence(core), original=word)
 
+        # Split a merged word into two real words: itsthe -> its the
+        if self.cfg.get("join_split_words", True):
+            seg = self.matcher.try_split(core)
+            if seg:
+                return WordResult("apply", intended=seg, layer="split",
+                                  confidence=0.80, original=word)
+
         # Layer 2: keyboard + phonetic matcher (deterministic)
         cand, conf = self.matcher.match(core, min_confidence=0.0)
         gate = self._l2_gate()

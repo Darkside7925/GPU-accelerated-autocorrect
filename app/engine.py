@@ -398,11 +398,47 @@ class AutocorrectEngine:
 
     # -------------------------------------------------- layers 1 and 2 (hot path)
 
+    def _try_join(self, word, trigger) -> bool:
+        """A word wrongly split by a stray space (inc rease -> increase): if the
+        finished word is not valid on its own but joining it to the immediately
+        preceding word makes a real word, merge the two into one. The MODEL is
+        rewritten; _sync renders it on the next pause."""
+        if not self.cfg.get("join_split_words", True):
+            return False
+        core = word.strip("'-")
+        if len(core) < 2 or self.pipeline.is_valid(core):
+            return False
+        before = self._tail[: -(len(word) + len(trigger))]   # text before this word
+        m = re.search(r"(?<![A-Za-z'])([A-Za-z]{1,15}) $", before)
+        if not m:
+            return False                                     # need exactly one space
+        prev = m.group(1)
+        joined = prev + core
+        # merge only when the CURRENT word is a fragment (already checked invalid
+        # above) and the join is a real word. The first part may be a valid word
+        # (inc is a word, yet inc + rease = increase). Two valid words are never
+        # merged because a valid current word returns early above.
+        if not self.pipeline.matcher.is_word(joined):
+            return False
+        n = len(prev) + 1 + len(word) + len(trigger)         # prev + space + word + trigger
+        self._tail = self._tail[:-n] + _match_case(prev, joined) + trigger
+        if prev in self._deferred:
+            self._deferred.remove(prev)
+        self._cand_hints.pop(prev, None)
+        log_id = self.personal.log_correction(prev + " " + word, joined, "join")
+        self._last_corr = {"original": prev + " " + word, "corrected": joined,
+                           "layer": "join", "trigger": trigger,
+                           "ts": time.monotonic(), "log_id": log_id}
+        log.info("join: %r + %r -> %r", prev, word, joined)
+        return True
+
     def _correct_word(self, word, trigger):
         """Route a finished word through the deterministic layers. A Layer 1 or
         Layer 2 hit rewrites the MODEL only (_tail); the physical screen keeps
         the typo until _sync renders it on the next pause. An unresolved word is
         deferred to Layer 3. Valid words are left alone (passthrough)."""
+        if self._try_join(word, trigger):
+            return
         res = self.pipeline.on_word(word)
         if DEBUG:
             log.info("DEBUG word=%r -> %s intended=%r conf=%.2f",

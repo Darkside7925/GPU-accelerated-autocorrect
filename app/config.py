@@ -36,6 +36,7 @@ DEFAULTS = {
     "layer2_short_confidence": 0.85,       # higher bar for short words (<=4 chars): keyboard
                                            # matching is unreliable there, context should decide
     "hint_min_confidence": 0.55,           # only hint the LLM with Layer 2 candidates this good
+    "join_split_words": True,              # fix wrong spaces: inc rease -> increase, itsthe -> its the
     # dashboard
     "dashboard_enabled": True,
     "dashboard_hostname": "grammer.local", # add "127.0.0.1 grammer.local" to the hosts file
