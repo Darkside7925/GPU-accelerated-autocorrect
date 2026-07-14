@@ -413,13 +413,23 @@ class AutocorrectEngine:
         if not m:
             return False                                     # need exactly one space
         prev = m.group(1)
-        joined = prev + core
+        merged = prev + core
         # merge only when the CURRENT word is a fragment (already checked invalid
-        # above) and the join is a real word. The first part may be a valid word
-        # (inc is a word, yet inc + rease = increase). Two valid words are never
-        # merged because a valid current word returns early above.
-        if not self.pipeline.matcher.is_word(joined):
-            return False
+        # above). Two valid words are never merged because a valid current word
+        # returns early above.
+        if self.pipeline.matcher.is_word(merged):
+            joined = merged                                  # inc + rease = increase
+        else:
+            # the second fragment may itself be mistyped: inc + erease =
+            # incerease -> increase. Accept a fuzzy fix only when it still starts
+            # with the prefix you typed correctly, which keeps it anchored and safe.
+            cand, conf = self.pipeline.matcher.match(merged, 0.0)
+            if (cand and cand.lower() != merged.lower()
+                    and cand.lower().startswith(prev.lower())
+                    and conf >= self.cfg.get("join_fuzzy_confidence", 0.45)):
+                joined = cand
+            else:
+                return False
         n = len(prev) + 1 + len(word) + len(trigger)         # prev + space + word + trigger
         self._tail = self._tail[:-n] + _match_case(prev, joined) + trigger
         if prev in self._deferred:

@@ -37,6 +37,8 @@ DEFAULTS = {
                                            # matching is unreliable there, context should decide
     "hint_min_confidence": 0.55,           # only hint the LLM with Layer 2 candidates this good
     "join_split_words": True,              # fix wrong spaces: inc rease -> increase, itsthe -> its the
+    "join_fuzzy_confidence": 0.45,         # merge a mistyped 2nd fragment (inc erease -> increase) if the
+                                           # fix still starts with the correctly-typed prefix
     # dashboard
     "dashboard_enabled": True,
     "dashboard_hostname": "grammer.local", # add "127.0.0.1 grammer.local" to the hosts file
