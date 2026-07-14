@@ -96,10 +96,8 @@ The learning loop closes it: every sentence and every accepted or rejected corre
 
 ### Wrong-space fixes (join and split)
 
-Two space errors are corrected deterministically, and instantly:
-
-- **Join** (`inc rease` -> `increase`): if a finished word is not real on its own but merging it with the word right before it makes a real word, the two are merged and the stray space removed. It even handles a mistyped second half (`inc erease` -> `increase`) by fuzzy-correcting the merge, but only when the fix still starts with the prefix you typed correctly, which keeps it anchored and safe. Two genuinely separate words are never merged.
-- **Split** (`itsthe` -> `its the`, `aswell` -> `as well`): a non-word that divides cleanly into two common words is split at the best point. Real words are never split.
+- **Join** (`inc rease` -> `increase`) is deterministic and instant: if a finished word is not real on its own but merging it with the word right before it makes a real word, the two are merged and the stray space removed. It even handles a mistyped second half (`inc erease` -> `increase`) by fuzzy-correcting the merge, but only when the fix still starts with the prefix you typed correctly, which keeps it anchored and safe. Two genuinely separate words are never merged.
+- **Split** (`itsthe` -> `its the`, `alot` -> `a lot`) is handled by the context layer, not a heuristic. A deterministic splitter cannot tell a real word that is simply missing from its dictionary (`dueling`, `starlink`) from a genuine missing space, so it mangles valid words. Instead an unresolved run-on is handed to the LLM, which uses the sentence to decide. A split is only ever applied when the model returns exactly two real words whose letters, with the space removed, still spell what you typed, so it can insert a space but never change a letter. Real words, names, and brands are left alone.
 
 Passthrough is defended four ways, on purpose: valid dictionary words never reach Layer 3 (structural), the whitelist skips known personal terms, the overcorrection guard blocks the rewrite of names and brands, and repeated backspacing eventually protects anything that still slips through.
 

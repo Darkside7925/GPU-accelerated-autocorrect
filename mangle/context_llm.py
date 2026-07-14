@@ -46,10 +46,16 @@ FILL_IN_BLANK_PROMPT = (
     "- Fix only an obvious misspelling of an ordinary English word. Never swap a "
     "word for a synonym or a different word that only means or sounds similar. "
     "Do not translate slang. Do not shorten or expand the word.\n"
+    "- MISSING SPACE: if the bracketed word is clearly two ordinary words typed "
+    "with no space between them (like 'itsthe' for 'its the', or 'alot' for 'a "
+    "lot'), reply with the two words separated by ONE space. Do this only when "
+    "both are real words and the letters are otherwise correct. NEVER split a "
+    "real single word (dueling, running, awesome), a name, a brand (starlink), "
+    "or a compound word. If in doubt, do not split.\n"
     "- If you are not certain it is a plain misspelling of a common word, reply "
     "with the bracketed word unchanged. When in doubt, do nothing.\n"
-    "Reply with just one word: no brackets, no quotes, no punctuation, no "
-    "explanation."
+    "Reply with the intended word, or the two words if it was a missing space: "
+    "no brackets, no quotes, no punctuation, no explanation."
 )
 FILL_OPTIONS = {"num_predict": 16, "temperature": 0}
 
@@ -233,8 +239,19 @@ class ContextLLMWorker:
             if looks_like_name(sentence, token):
                 continue  # framed as a name (Mr X, @handle, "name is X"): keep it
             word = self._ask(sentence, token, hints.get(token))
-            if not word or re.search(r"\s", word):
-                continue  # empty or multi-word: reject (single-word discipline)
+            if not word:
+                continue
+            if re.search(r"\s", word):
+                # the model split a run-on into words (itsthe -> its the). Accept
+                # only a PURE split: exactly two real words whose letters, with
+                # the space removed, still spell what was typed. That makes it
+                # impossible for the model to invent or change letters while
+                # splitting, so a wrong split can only ever be a wrong space.
+                split = self._accept_split(core, word)
+                if split:
+                    out[token] = split
+                    self._memory.record(core, split.lower(), source="llm")
+                continue
             if word.lower() == token.lower():
                 continue  # model kept it as-is: nothing to do
             if overcorrection_guard(token, word):
@@ -248,6 +265,23 @@ class ContextLLMWorker:
             out[token] = word
             self._memory.record(core, word.lower(), source="llm")
         return out
+
+    def _accept_split(self, core: str, answer: str) -> str | None:
+        """Validate a Layer-3 split. Returns the 'w1 w2' string to apply, or None.
+        Guarded hard: splitting must be enabled, the answer must be exactly two
+        real words, and joining them back (no spaces) must reproduce the typed
+        token letter for letter. So the model may only INSERT a space, never
+        change letters, and both sides must be dictionary words."""
+        if not self._cfg.get("join_split_words", True):
+            return None
+        parts = answer.split()
+        if len(parts) != 2 or not all(p.isalpha() for p in parts):
+            return None
+        if "".join(parts).lower() != core.lower():
+            return None
+        if self._is_word is None or not all(self._is_word(p) for p in parts):
+            return None
+        return answer.lower()
 
     def _ask(self, sentence: str, token: str, hints=None) -> str:
         model = self._cfg["active_model"]

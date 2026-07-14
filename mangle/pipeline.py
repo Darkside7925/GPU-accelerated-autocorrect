@@ -88,12 +88,11 @@ class RecoveryPipeline:
             return WordResult("apply", intended=hit, layer="memory",
                               confidence=self.memory.confidence(core), original=word)
 
-        # Split a merged word into two real words: itsthe -> its the
-        if self.cfg.get("join_split_words", True):
-            seg = self.matcher.try_split(core)
-            if seg:
-                return WordResult("apply", intended=seg, layer="split",
-                                  confidence=0.80, original=word)
+        # NOTE: splitting a run-on (itsthe -> its the) is NOT done here. A
+        # deterministic splitter cannot tell a real word missing from the
+        # frequency dict (dueling, starlink) from a genuine missing space, so it
+        # mangles valid words. Splitting is handed to Layer 3, which has the
+        # sentence context to make that call. An unresolved run-on simply defers.
 
         # Layer 2: keyboard + phonetic matcher (deterministic)
         cand, conf = self.matcher.match(core, min_confidence=0.0)
