@@ -186,3 +186,7 @@ button.ghost { background: transparent; }
   opacity: 0; transform: translateY(10px); transition: all 0.25s; font-size: 13px; }
 .toast.show { opacity: 1; transform: translateY(0); }
 svg.chart text { fill: var(--dim); font-size: 11px; font-family: sans-serif; }
+#updateBanner { display: block; text-decoration: none; text-align: center; padding: 9px 14px;
+  font-size: 13px; font-weight: 600; color: #05121f; background: linear-gradient(90deg, var(--accent), var(--good));
+  border-bottom: 1px solid var(--line2); }
+#updateBanner:hover { filter: brightness(1.06); }

@@ -27,7 +27,8 @@ DEFAULTS = {
     "context_homophones": True,            # guarded LLM check of valid homophones (to/too, their/
                                            # there); answers outside the confusion group are refused
     "stage2_max_drift_chars": 100,         # largest backspace reach when rendering a correction
-    "undo_window_s": 4.0,                  # backspace within this window = undo + learn
+    "undo_window_s": 4.0,                  # backspace within this window counts as a rejection
+    "reject_threshold": 3,                 # stop correcting a word after this many rejections
     "min_word_len": 3,                     # don't autocorrect 1-2 letter words
     # layered recovery gates
     "layer1_apply_confidence": 0.50,       # min personal-memory confidence to auto-apply

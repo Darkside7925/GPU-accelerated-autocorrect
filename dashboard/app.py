@@ -180,6 +180,11 @@ def create_app(cfg, memory, personal, engine, db_path) -> Flask:
                 "dashboard_hostname", "dashboard_port"]
         return jsonify({k: cfg.get(k) for k in keys})
 
+    @app.route("/api/version")
+    def version():
+        from app.updater import check_for_update
+        return jsonify(check_for_update())
+
     @app.route("/api/health")
     def health():
         l3 = engine.layer3

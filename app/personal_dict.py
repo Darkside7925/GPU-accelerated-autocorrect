@@ -1,9 +1,10 @@
 """SQLite-backed personal dictionary: words that must never be autocorrected.
 
 Words get here two ways:
-  - manually (future UI / direct DB insert)
-  - automatically, when the user backspaces immediately after a correction
-    (undo-to-learn), recorded with source='undo'.
+  - manually (dashboard / direct DB insert)
+  - automatically, once a correction has been REJECTED (backspaced away)
+    enough times to look like a pattern, recorded with source='rejected'.
+    A single backspace is only an undo; repeated rejection is what teaches it.
 """
 
 from __future__ import annotations
@@ -32,6 +33,14 @@ class PersonalDict:
                    corrected TEXT NOT NULL,
                    stage TEXT NOT NULL,
                    undone INTEGER NOT NULL DEFAULT 0
+               )"""
+        )
+        self._conn.execute(
+            """CREATE TABLE IF NOT EXISTS rejections (
+                   word TEXT PRIMARY KEY,
+                   corrected TEXT NOT NULL,
+                   count INTEGER NOT NULL DEFAULT 0,
+                   last_ts REAL NOT NULL
                )"""
         )
         self._conn.commit()
@@ -78,6 +87,41 @@ class PersonalDict:
         with self._lock:
             self._conn.execute("UPDATE correction_log SET undone = 1 WHERE id = ?", (log_id,))
             self._conn.commit()
+
+    def record_rejection(self, word: str, corrected: str) -> int:
+        """Count one rejection (a backspaced correction) for `word`; returns the
+        new running count. The engine only stops correcting once this crosses a
+        threshold, so a single accidental backspace never disables a word."""
+        w = word.lower().strip()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO rejections (word, corrected, count, last_ts) "
+                "VALUES (?, ?, 1, ?) ON CONFLICT(word) DO UPDATE SET "
+                "count = count + 1, corrected = excluded.corrected, last_ts = excluded.last_ts",
+                (w, corrected, time.time()),
+            )
+            self._conn.commit()
+            row = self._conn.execute("SELECT count FROM rejections WHERE word = ?", (w,)).fetchone()
+        return row[0] if row else 1
+
+    def rejection_count(self, word: str) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT count FROM rejections WHERE word = ?", (word.lower().strip(),)
+            ).fetchone()
+        return row[0] if row else 0
+
+    def clear_rejection(self, word: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM rejections WHERE word = ?", (word.lower().strip(),))
+            self._conn.commit()
+
+    def rejection_stats(self):
+        """(word, corrected, count) rows in progress, for the dashboard."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT word, corrected, count FROM rejections ORDER BY count DESC"
+            ).fetchall()
 
     def iter_corrections(self, since_ts: float = 0.0):
         """(ts, original, corrected, stage, undone) rows, for the learning loop

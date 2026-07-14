@@ -273,6 +273,18 @@ $("#saveSettings").onclick = async () => {
   await post("/api/settings", body); $("#settingsMsg").textContent = "saved"; toast("settings saved"); refreshHeader();
 };
 
+async function checkVersion() {
+  try {
+    const v = await j("/api/version");
+    const b = $("#updateBanner");
+    if (v.available) {
+      b.textContent = `Update available: v${v.latest} (you have v${v.current}) - click to open the repo`;
+      b.href = v.url; b.style.display = "block";
+    } else { b.style.display = "none"; }
+  } catch (e) { /* offline */ }
+}
+
 refreshHeader();
+checkVersion();
 show("overview");
 setInterval(() => { refreshHeader(); const a = window._active; if (["overview", "health", "rawlog"].includes(a) && loaders[a]) loaders[a](); }, 6000);

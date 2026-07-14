@@ -34,11 +34,29 @@ class TrayApp:
         self.dashboard_url = dashboard_url
         self._models: list[str] = []
         self._bench_running = False
+        self._update = None   # set by the update check: {available, current, latest, url}
         self.icon = pystray.Icon(
             "autocorrect", _make_icon_image(engine.enabled), "Autocorrect", self._menu()
         )
         engine.on_toggle = self._on_toggle
         threading.Thread(target=self._refresh_models, daemon=True).start()
+        threading.Thread(target=self._check_updates, args=(True,), daemon=True).start()
+
+    def _check_updates(self, notify=False):
+        try:
+            from app.updater import check_for_update
+            self._update = check_for_update(force=True)
+            self.icon.menu = self._menu()
+            self.icon.update_menu()
+            if self._update.get("available"):
+                self.icon.notify(
+                    f"Update available: v{self._update['latest']} "
+                    f"(you have v{self._update['current']})", "Sumizome")
+            elif notify is False:   # only announce "up to date" on a manual check
+                self.icon.notify(f"You are on the latest version "
+                                 f"(v{self._update['current']})", "Sumizome")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ menu
 
@@ -73,8 +91,19 @@ class TrayApp:
                  visible=bool(self.dashboard_url)),
             Item("Run compaction now", self._compact_now),
             Menu.SEPARATOR,
+            Item(lambda item: (f"Update available: v{self._update['latest']}"
+                               if self._update and self._update.get("available")
+                               else "Check for updates"),
+                 self._on_update_click),
             Item("Quit", self._quit),
         )
+
+    def _on_update_click(self):
+        if self._update and self._update.get("available"):
+            import webbrowser
+            webbrowser.open(self._update.get("url", ""))
+        else:
+            threading.Thread(target=self._check_updates, args=(False,), daemon=True).start()
 
     def _open_dashboard(self):
         if self.dashboard_url:

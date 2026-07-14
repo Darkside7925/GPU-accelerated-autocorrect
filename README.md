@@ -26,7 +26,8 @@ pythonw -m app.main         # background, no console window
 ```
 
 - **Ctrl+Alt+A** toggles correction on and off. The tray menu does the same, plus model hot-swap, run-benchmark, open-dashboard, and run-compaction.
-- **Backspace once, right after a correction,** undoes it and adds that word to the never-touch whitelist forever. That single gesture is how the system learns what not to touch.
+- **Backspace right after a correction** to undo it and get your word back. It is not disabled on a single backspace, that would be too trigger-happy. Only when the same correction gets rejected repeatedly (`reject_threshold`, default 3 times) does the engine conclude the fix is genuinely unwanted and stop making it. It learns from the pattern, not one keystroke.
+- **Updates** are checked against GitHub on startup. If a newer version is published, the tray shows "Update available" and the dashboard shows a banner. The check compares this build's version to `app/version.py` on the repo's main branch; it never auto-installs.
 
 Then open the dashboard. One-time setup (Administrator, once) maps a friendly name to the loopback address:
 
@@ -91,9 +92,16 @@ The hook is observe-only, so your keystrokes reach the screen a beat before the 
 
 Toggle with `transactional_sync`.
 
-The learning loop closes it: every sentence and every accepted or rejected correction is logged locally. An end-of-day pass (`mangle/compact.py`) promotes recurring mangles into Layer 1 and grows the never-touch whitelist from words you type often and never fix. Undo-to-learn is the fast path for the same thing: one backspace whitelists a word permanently and deletes the mapping that produced the bad correction.
+The learning loop closes it: every sentence and every accepted or rejected correction is logged locally. An end-of-day pass (`mangle/compact.py`) promotes recurring mangles into Layer 1 and grows the never-touch whitelist from words you type often and never fix. Reject-to-learn is the interactive path: each time you backspace a correction it counts as a rejection, and once a correction has been rejected `reject_threshold` times the engine stops making it (whitelists the word and drops the mapping). A single backspace is only an undo, so one stray keystroke never disables a word.
 
-Passthrough is defended four ways, on purpose: valid dictionary words never reach Layer 3 (structural), the whitelist skips known personal terms, the overcorrection guard blocks the rewrite of names and brands, and one backspace permanently protects anything that still slips through.
+### Wrong-space fixes (join and split)
+
+Two space errors are corrected deterministically, and instantly:
+
+- **Join** (`inc rease` -> `increase`): if a finished word is not real on its own but merging it with the word right before it makes a real word, the two are merged and the stray space removed. It even handles a mistyped second half (`inc erease` -> `increase`) by fuzzy-correcting the merge, but only when the fix still starts with the prefix you typed correctly, which keeps it anchored and safe. Two genuinely separate words are never merged.
+- **Split** (`itsthe` -> `its the`, `aswell` -> `as well`): a non-word that divides cleanly into two common words is split at the best point. Real words are never split.
+
+Passthrough is defended four ways, on purpose: valid dictionary words never reach Layer 3 (structural), the whitelist skips known personal terms, the overcorrection guard blocks the rewrite of names and brands, and repeated backspacing eventually protects anything that still slips through.
 
 ---
 
@@ -121,8 +129,10 @@ Local, offline, and for your eyes only. Flask in a daemon thread on the loopback
 ```
 app/
   engine.py          observe-only WH_KEYBOARD_LL hook (Alt-Tab safe), the layered
-                     router, backspace-and-retype injection, undo-to-learn
-  personal_dict.py   never-touch whitelist + correction log (SQLite)
+                     router, transactional injection, join/split, reject-to-learn
+  personal_dict.py   never-touch whitelist + correction + rejection log (SQLite)
+  updater.py         checks GitHub for a newer app/version.py
+  version.py         the app version (bump + push to notify existing installs)
   config.py          config load/save, layer gates, dashboard settings
   tray.py            tray icon, model hot-swap, dashboard and compaction actions
   main.py            wiring and entry point

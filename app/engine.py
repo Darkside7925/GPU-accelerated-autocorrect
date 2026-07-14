@@ -570,12 +570,22 @@ class AutocorrectEngine:
         base = self._synced[: -len(rendered)]
         self._synced = base + lc["corrected"]               # user deleted the trigger
         self._tail = base + lc["original"] + lc["trigger"]  # _sync restores original
-        # reject-to-learn: never touch this word again, and kill the mapping that
-        # produced the bad correction so no layer repeats it
-        self.personal.add(lc["original"], source="undo")
-        self.memory.demote(lc["original"])
         self.personal.mark_undone(lc["log_id"])
-        log.info("undo: restored %r, whitelisted and demoted", lc["original"])
+        # Reject-to-LEARN, by pattern, not on a single backspace. Restoring the
+        # word once is just an undo. Only when the same correction gets rejected
+        # repeatedly does the engine conclude it is genuinely unwanted and stop
+        # making it (whitelist the word and drop any learned mapping).
+        n = self.personal.record_rejection(lc["original"], lc["corrected"])
+        threshold = self.cfg.get("reject_threshold", 3)
+        if n >= threshold:
+            self.personal.add(lc["original"], source="rejected")
+            self.memory.demote(lc["original"])
+            self.personal.clear_rejection(lc["original"])
+            log.info("stopped correcting %r -> %r after %d rejections",
+                     lc["original"], lc["corrected"], n)
+        else:
+            log.info("undo: restored %r (rejection %d of %d before it stops)",
+                     lc["original"], n, threshold)
         return True
 
     # ------------------------------------------- Layer 3 (context, async, gated)
