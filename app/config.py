@@ -31,6 +31,11 @@ DEFAULTS = {
     "reject_threshold": 3,                 # stop correcting a word after this many rejections
     "min_word_len": 3,                     # don't autocorrect 1-2 letter words
     # layered recovery gates
+    "llm_only": False,                     # LLM-only mode: skip the deterministic L1 (memory) and
+                                           # L2 (keyboard/phonetic) auto-fixes and send every word
+                                           # needing correction straight to the context LLM. Valid
+                                           # words still pass through untouched. Slower, but the LLM
+                                           # (not a heuristic) makes every call, using the sentence.
     "layer1_apply_confidence": 0.50,       # min personal-memory confidence to auto-apply
     "layer2_apply_confidence": 0.72,       # min matcher confidence to auto-apply, else defer to L3.
                                            # tuned to catch clear near-misses without misfiring

@@ -5,4 +5,4 @@ bumping VERSION here and pushing is what tells existing installs an update is
 available. Keep it a plain dotted number so the comparison stays simple.
 """
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"

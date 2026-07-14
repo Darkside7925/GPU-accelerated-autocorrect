@@ -82,11 +82,17 @@ class RecoveryPipeline:
         if len(core) < min_len:
             return WordResult("pass", original=word)
 
+        # LLM-only mode: skip the deterministic auto-fixes below and send every
+        # word needing correction straight to the context LLM. Layer 2 still runs
+        # (its candidates become hints for the model), it just never auto-applies.
+        llm_only = self.cfg.get("llm_only", False)
+
         # Layer 1: personal typo memory (instant, deterministic)
-        hit = self.memory.lookup(core, min_confidence=self._l1_gate())
-        if hit and hit.lower() != core.lower():
-            return WordResult("apply", intended=hit, layer="memory",
-                              confidence=self.memory.confidence(core), original=word)
+        if not llm_only:
+            hit = self.memory.lookup(core, min_confidence=self._l1_gate())
+            if hit and hit.lower() != core.lower():
+                return WordResult("apply", intended=hit, layer="memory",
+                                  confidence=self.memory.confidence(core), original=word)
 
         # NOTE: splitting a run-on (itsthe -> its the) is NOT done here. A
         # deterministic splitter cannot tell a real word missing from the
@@ -103,7 +109,7 @@ class RecoveryPipeline:
         # missed one.
         if len(core) <= 4:
             gate = max(gate, self.cfg.get("layer2_short_confidence", 0.85))
-        if cand and conf >= gate and cand.lower() != core.lower():
+        if not llm_only and cand and conf >= gate and cand.lower() != core.lower():
             return WordResult("apply", intended=cand, layer="matcher",
                               confidence=conf, original=word)
 

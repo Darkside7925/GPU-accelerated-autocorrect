@@ -174,7 +174,7 @@ def create_app(cfg, memory, personal, engine, db_path) -> Flask:
 
     @app.route("/api/settings")
     def get_settings():
-        keys = ["stage2_enabled", "stage2_idle_ms", "stage2_max_drift_chars",
+        keys = ["stage2_enabled", "llm_only", "stage2_idle_ms", "stage2_max_drift_chars",
                 "undo_window_s", "min_word_len", "layer1_apply_confidence",
                 "layer2_apply_confidence", "ollama_url", "active_model",
                 "dashboard_hostname", "dashboard_port"]

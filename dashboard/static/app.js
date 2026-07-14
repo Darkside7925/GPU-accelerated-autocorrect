@@ -155,7 +155,8 @@ const loaders = {
     const txt = (k) => `<div class="field"><label>${labelFor(k)}</label><input type="text" data-k="${k}" value="${esc(s[k])}"><span class="hint">${hintFor(k)}</span></div>`;
     const bool = (k) => `<div class="field"><label>${labelFor(k)}</label><label class="muted"><input type="checkbox" data-k="${k}" ${s[k] ? "checked" : ""} style="width:auto"> enabled</label><span class="hint">${hintFor(k)}</span></div>`;
     $("#settingsForm").innerHTML = [
-      bool("stage2_enabled"), rng("layer2_apply_confidence", 0.5, 0.95, 0.01),
+      bool("stage2_enabled"), bool("llm_only"),
+      rng("layer2_apply_confidence", 0.5, 0.95, 0.01),
       rng("layer1_apply_confidence", 0.2, 0.9, 0.01), num("min_word_len"),
       num("stage2_idle_ms"), num("stage2_max_drift_chars"),
       num("undo_window_s"), txt("ollama_url"),
@@ -184,8 +185,8 @@ const loaders = {
   },
 };
 
-const LABELS = { stage2_enabled: "Layer 3 (context LLM)", layer2_apply_confidence: "Layer 2 apply threshold", layer1_apply_confidence: "Layer 1 apply threshold", min_word_len: "Minimum word length", stage2_idle_ms: "Idle pause before LLM apply (ms)", stage2_max_drift_chars: "Max cursor drift (chars)", undo_window_s: "Undo window (seconds)", ollama_url: "Ollama URL", dashboard_hostname: "Dashboard hostname", dashboard_port: "Dashboard port" };
-const HINTS = { layer2_apply_confidence: "higher means Layer 2 defers more to the LLM", layer1_apply_confidence: "confidence a learned pair needs to auto-apply", min_word_len: "shorter words are never corrected", stage2_idle_ms: "how long you must pause before an LLM fix lands", stage2_max_drift_chars: "drop the LLM fix if you typed past this", undo_window_s: "backspace within this to undo and whitelist", ollama_url: "use 127.0.0.1, not localhost", dashboard_hostname: "run setup_hosts.py to map it", dashboard_port: "80 for a bare hostname, else a fallback" };
+const LABELS = { stage2_enabled: "Layer 3 (context LLM)", llm_only: "LLM-only mode", layer2_apply_confidence: "Layer 2 apply threshold", layer1_apply_confidence: "Layer 1 apply threshold", min_word_len: "Minimum word length", stage2_idle_ms: "Idle pause before LLM apply (ms)", stage2_max_drift_chars: "Max cursor drift (chars)", undo_window_s: "Undo window (seconds)", ollama_url: "Ollama URL", dashboard_hostname: "Dashboard hostname", dashboard_port: "Dashboard port" };
+const HINTS = { llm_only: "skip the fast memory + keyboard layers; the LLM fixes every word (slower, more context-aware)", layer2_apply_confidence: "higher means Layer 2 defers more to the LLM", layer1_apply_confidence: "confidence a learned pair needs to auto-apply", min_word_len: "shorter words are never corrected", stage2_idle_ms: "how long you must pause before an LLM fix lands", stage2_max_drift_chars: "drop the LLM fix if you typed past this", undo_window_s: "backspace within this to undo and whitelist", ollama_url: "use 127.0.0.1, not localhost", dashboard_hostname: "run setup_hosts.py to map it", dashboard_port: "80 for a bare hostname, else a fallback" };
 const labelFor = k => LABELS[k] || k;
 const hintFor = k => HINTS[k] || "";
 
